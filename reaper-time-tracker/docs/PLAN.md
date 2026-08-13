@@ -1,21 +1,4 @@
-## File/Folder Structure
-
-```
-reaper-time-tracker/
-├── Scripts/
-│   ├── TimeTracker_Background.lua      # defer() loop, tracks active project
-│   └── TimeTracker_GenerateReport.lua  # reads JSON, writes HTML, opens browser
-├── lib/
-│   ├── tt_json.lua           # vendored pure-Lua JSON encode/decode (Lua has none built in)
-│   ├── tt_paths.lua          # resolves data file location via reaper.GetResourcePath()
-│   ├── tt_project_id.lua     # project identity resolution (see below)
-│   ├── tt_deps.lua           # js_ReaScriptAPI presence check
-│   └── tt_report_html.lua    # HTML/CSS/chart template as a Lua string (kept out of the main script for readability)
-├── docs/
-│   ├── DOCS.md
-│   └── README.md             # install via ReaPack, first-run instructions
-└── data/                     # NOT shipped — created at runtime
-```
+# Plan
 
 Data lives under `reaper.GetResourcePath() .. "/Data/TimeTracker/time_data.json"` — REAPER's own per-user resource path, not the script folder, so it survives ReaPack updates and works identically cross-platform.
 
