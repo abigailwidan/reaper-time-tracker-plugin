@@ -1,60 +1,33 @@
 -- TimeTracker_Background.lua
 --
--- Milestone 1: dependency check + skeleton polling loop.
--- Confirms js_ReaScriptAPI is installed, then polls (throttled to once per
--- second) whether REAPER is the OS-foreground window AND whether that
--- foreground window belongs to *this* REAPER instance. For now this only
--- prints to the console — no project tracking or data writing yet.
---
--- See DOCS.md > Architecture (1. Background tracking loop) and
--- PLAN.md > Timing Constants / Edge Cases (Multiple REAPER instances).
+-- Milestone 2: Background polling + Project Identity
+-- Integrates the lib/tt_project_id module to read/generate GUIDs and track
+-- tab switching, Save As, and initial saves.
 
--- Make lib/ requirable relative to this script's own location.
 local script_path = debug.getinfo(1, "S").source:match("^@?(.*[\\/])")
 package.path = script_path .. "../lib/?.lua;" .. package.path
 
 local tt_deps = require("tt_deps")
+local tt_project_id = require("tt_project_id")
 
 -- ── Dependency check ────────────────────────────────────────────────────
--- Must happen before the defer loop is ever registered. If js_ReaScriptAPI
--- is missing, warn and return immediately — no loop, no data, no crash.
 if not tt_deps.check_js_reascript_api() then
   tt_deps.warn_missing_js_reascript_api()
   return
 end
 
 -- ── Constants ───────────────────────────────────────────────────────────
-local FOCUS_POLL_INTERVAL = 1.0 -- seconds; see PLAN.md > Timing Constants
+local FOCUS_POLL_INTERVAL = 1.0
 
 -- ── State ───────────────────────────────────────────────────────────────
 local last_poll_time = 0
 local this_instance_hwnd = reaper.GetMainHwnd()
-local root_method_logged = false -- so we only log which method worked once
 
--- Walks up from a window handle to its top-level ancestor. Prefers
--- JS_Window_GetRelated(hwnd, "ROOT"); falls back to manually walking
--- JS_Window_GetParent if "ROOT" isn't supported by the installed
--- js_ReaScriptAPI version.
---
--- STATUS: unverified — see "Items to Confirm During Build" in PLAN.md.
--- Logs which path it took so this can be confirmed against real behaviour.
 local function get_top_level_ancestor(hwnd)
   if not hwnd then return nil end
-
   local root = reaper.JS_Window_GetRelated(hwnd, "ROOT")
-
-  if not root_method_logged then
-    if root then
-      reaper.ShowConsoleMsg("[TimeTracker] Multi-instance check: using JS_Window_GetRelated ROOT.\n")
-    else
-      reaper.ShowConsoleMsg("[TimeTracker] Multi-instance check: ROOT unsupported, falling back to JS_Window_GetParent walk.\n")
-    end
-    root_method_logged = true
-  end
-
   if root then return root end
 
-  -- Fallback: walk parents manually until there isn't one.
   local current = hwnd
   while true do
     local parent = reaper.JS_Window_GetParent(current)
@@ -64,9 +37,6 @@ local function get_top_level_ancestor(hwnd)
   return current
 end
 
--- True if REAPER is the OS-foreground window AND that foreground window
--- belongs to this REAPER instance (guards against a second open instance
--- being mistaken for this one).
 local function is_this_instance_focused()
   local foreground_hwnd = reaper.JS_Window_GetForeground()
   if not foreground_hwnd then return false end
@@ -81,9 +51,23 @@ local function main()
 
   if now - last_poll_time >= FOCUS_POLL_INTERVAL then
     last_poll_time = now
+    
     local focused = is_this_instance_focused()
+    
+    -- Update project identity and check for state changes
+    local has_tab_changed, current_guid, display_name, migrated_guid = tt_project_id.update()
+    
+    if has_tab_changed then
+      reaper.ShowConsoleMsg(string.format(
+        "\n[TimeTracker] Tab Switched To: %s (GUID: %s)\n", 
+        display_name, current_guid
+      ))
+    end
+    
+    -- Print current state to verify polling is working alongside identity tracking
     reaper.ShowConsoleMsg(string.format(
-      "[TimeTracker] t=%.1f focused=%s\n", now, tostring(focused)
+      "[TimeTracker] t=%.1f | focus=%s | proj=%s\n", 
+      now, tostring(focused), current_guid
     ))
   end
 
@@ -91,5 +75,5 @@ local function main()
 end
 
 reaper.ClearConsole()
-reaper.ShowConsoleMsg("[TimeTracker] Started. js_ReaScriptAPI found — polling foreground state.\n")
+reaper.ShowConsoleMsg("[TimeTracker] Started. Polling foreground and project state.\n")
 main()
