@@ -1,8 +1,8 @@
 -- TimeTracker_Background.lua
 --
--- Milestone 5: Startup recovery
--- Handles reading dangling sessions on startup and capping them securely
--- using the last known autosave timestamp checkpoint.
+-- Milestone 5: Startup recovery (Revision 2)
+-- Fixes a bug in the merge logic where active sessions lost their identity,
+-- and adds explicit logging to verify JSON parsing on startup.
 
 local script_path = debug.getinfo(1, "S").source:match("^@?(.*[\\/])")
 package.path = script_path .. "../lib/?.lua;" .. package.path
@@ -80,12 +80,23 @@ reaper.atexit(save_data_to_disk)
 
 local function load_and_recover_data()
   local f = io.open(tt_paths.get_data_file(), "r")
-  if not f then return end
+  if not f then 
+    reaper.ShowConsoleMsg("[TimeTracker] No existing data file found. Starting fresh.\n")
+    return 
+  end
   local content = f:read("*a")
   f:close()
   
+  if content == "" then return end
+  
   local decoded = tt_json.decode(content)
+  if not decoded then
+    reaper.ShowConsoleMsg("[TimeTracker] Error: Failed to parse JSON data. Starting fresh.\n")
+    return
+  end
+  
   if type(decoded) == "table" and decoded.projects then
+    reaper.ShowConsoleMsg("[TimeTracker] JSON loaded successfully.\n")
     tracking_data = decoded
     local file_last_saved = tracking_data.last_saved or os.time()
     local recovered = 0
@@ -94,7 +105,6 @@ local function load_and_recover_data()
       if proj.sessions then
         local last_session = proj.sessions[#proj.sessions]
         if last_session and last_session._is_active then
-          -- Resolve the dangling session
           local new_duration = file_last_saved - last_session._raw_start
           if new_duration < MIN_SESSION_SEC then
             proj.total_seconds = proj.total_seconds - last_session.duration_seconds
@@ -137,14 +147,14 @@ local function commit_session(guid, display_name, path, start_time, end_time, is
   local sessions = proj.sessions
   local last = sessions[#sessions]
   
-  -- 1. Update an ongoing active session from a previous autosave
-  if last and last._is_active and last._raw_start == start_time then
+  -- 1. Update the currently running session securely
+  if last and last._is_active then
     local prev_dur = last.duration_seconds
     last._raw_end = end_time
     last.end_time = format_iso8601(end_time)
-    last.duration_seconds = duration
+    last.duration_seconds = end_time - last._raw_start
     last._is_active = is_active_flag
-    proj.total_seconds = proj.total_seconds + (duration - prev_dur)
+    proj.total_seconds = proj.total_seconds + (last.duration_seconds - prev_dur)
     return
   end
   
@@ -214,7 +224,6 @@ local function main()
   if now - last_save_time >= AUTOSAVE_INTERVAL then
     last_save_time = now
     if is_tracking then
-      -- Write the ongoing session to memory safely so it survives a crash
       commit_session(session_tracked_guid, session_tracked_name, session_tracked_path, session_start_time, os.time(), true)
     end
     save_data_to_disk()
