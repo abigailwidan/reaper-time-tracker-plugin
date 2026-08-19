@@ -1,8 +1,29 @@
--- TimeTracker_Background.lua
+-- Scripts/TimeTracker_Background.lua
 --
--- Milestone 5: Startup recovery (Revision 2)
--- Fixes a bug in the merge logic where active sessions lost their identity,
--- and adds explicit logging to verify JSON parsing on startup.
+-- Purpose: Core background polling loop for continuous project time tracking.
+--
+-- This is the primary runtime component of TimeTracker. It:
+--   - Runs a persistent defer() loop (~1 Hz polling)
+--   - Monitors OS window focus to detect when REAPER is active
+--   - Tracks session start/end times and accumulates per-project totals
+--   - Detects project tab switches and file operations (First Save, Save As)
+--   - Auto-saves tracking data every 45 seconds
+--   - Recovers from crashes by finalizing incomplete sessions on startup
+--
+-- Installation: Install as a "Background / Startup Script" in REAPER (not a hotkey).
+--
+-- Key Design Decisions:
+--   - Focus-based tracking (not idle-time based) ensures contemplative work is credited
+--   - Atomic JSON writes via temp file prevent corruption on crash
+--   - Session merge (15-second gap) avoids fragmenting short pauses into separate entries
+--   - Multi-instance safety via js_ReaScriptAPI window hierarchy queries
+--
+-- Startup Behavior:
+--   1. Dependency check (js_ReaScriptAPI)
+--   2. Load previous session data and recover crashed sessions
+--   3. Start polling loop
+--
+-- Dependencies: REAPER API, js_ReaScriptAPI (for window focus), lib modules (tt_*)
 
 local script_path = debug.getinfo(1, "S").source:match("^@?(.*[\\/])")
 package.path = script_path .. "../lib/?.lua;" .. package.path
@@ -34,6 +55,16 @@ local session_tracked_name = ""
 local session_tracked_path = ""
 
 -- ── Utilities ───────────────────────────────────────────────────────────
+-- Helper functions for window hierarchy traversal and focus detection.
+--
+-- get_top_level_ancestor: Safely navigates the OS window hierarchy to find the
+--   root window of a given window handle. Handles cases where ROOT lookup fails.
+--
+-- is_this_instance_focused: Queries OS-level focus and returns true if the
+--   REAPER instance running this script is in the foreground.
+--
+-- format_iso8601: Converts a Unix timestamp to ISO8601 with timezone for JSON.
+
 local function get_top_level_ancestor(hwnd)
   if not hwnd then return nil end
   local root = reaper.JS_Window_GetRelated(hwnd, "ROOT")
@@ -61,6 +92,19 @@ local function format_iso8601(timestamp)
 end
 
 -- ── Disk I/O & Recovery ─────────────────────────────────────────────────
+-- Functions for persistence and crash recovery.
+--
+-- save_data_to_disk: Atomically writes tracking_data to time_data.json.
+--   - Writes to a temp file first, then renames (atomic on most filesystems)
+--   - Registered as an atexit handler to save state when REAPER closes
+--   - Called every AUTOSAVE_INTERVAL (45 sec) during execution
+--
+-- load_and_recover_data: Loads the previous session on startup.
+--   - If the last session crashed, recovers incomplete sessions
+--   - Validates version and JSON format
+--   - Deletes sessions shorter than MIN_SESSION_SEC (noise reduction)
+--   - Logs recovery stats to the console
+
 local function save_data_to_disk()
   tt_paths.ensure_dir()
   tracking_data.last_saved = os.time()
@@ -129,6 +173,18 @@ local function load_and_recover_data()
 end
 
 -- ── Session Accumulation ────────────────────────────────────────────────
+-- Core logic for building and merging time-tracking sessions.
+--
+-- get_or_create_project: Ensures a project exists in tracking_data and updates its metadata.
+--
+-- commit_session: Records a tracking interval into a project's session list.
+--   - Handles three cases:
+--     1. Update: Current active session is still running, just extend its end time
+--     2. Merge: Gap since last session ≤ MERGE_GAP_SEC (15 sec), fold into previous session
+--     3. New: Gap > 15 sec, create a new discrete session record
+--   - Silently drops sessions shorter than MIN_SESSION_SEC (5 sec) to reduce noise
+--   - Updates project.total_seconds atomically
+
 local function get_or_create_project(guid, display_name, path)
   if not tracking_data.projects[guid] then
     tracking_data.projects[guid] = { display_name = display_name, last_known_path = path, total_seconds = 0, sessions = {} }
@@ -178,6 +234,22 @@ local function commit_session(guid, display_name, path, start_time, end_time, is
 end
 
 -- ── Main loop ───────────────────────────────────────────────────────────
+-- The central polling routine, called via reaper.defer().
+--
+-- On each poll (~1 Hz):
+--   1. Check if REAPER is focused and a valid project exists
+--   2. Detect tab switches and file operations (First Save, Save As)
+--   3. Migrate session data if a project was just saved
+--   4. Start tracking if should_track became true; finalize if it became false
+--   5. Update active session if still tracking
+--   6. Auto-save every AUTOSAVE_INTERVAL if tracking is active
+--   7. Reschedule itself via defer()
+--
+-- State Machine:
+--   is_tracking: false (idle) → true (tracking focus) → false (lost focus or tab switched)
+--   On transition start: Record session_start_time and session_tracked_guid
+--   On transition stop: commit_session() to finalize the interval
+
 local function main()
   local now = reaper.time_precise()
 
