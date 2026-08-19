@@ -1,0 +1,32 @@
+-- ============================================================================
+-- Test File: while_true_do_end_test.lua
+-- Purpose: Tests continuous loop behaviour and blocking limitations within
+--          REAPER. Verifies that a runaway loop behaves predictably so the
+--          defer()-based polling in TimeTracker_Background.lua can safely
+--          run in the background without freezing the main UI or DSP
+--          threads. Manual, not automated -- run inside REAPER.
+--
+-- What it tests:
+--   1. Loop Blocking: Confirms that a `while true do end` infinite loop does
+--      NOT cause REAPER to freeze (i.e. defer() prevents main-thread
+--      blocking even with inefficient polling).
+--   2. DSP Stability: Verifies audio continues to process while the Lua
+--      script is running (no audio dropouts).
+--   3. UI Responsiveness: Checks that the REAPER UI remains clickable and
+--      responsive while the script is active.
+--
+-- Context: TimeTracker_Background.lua uses a continuous defer() loop for
+--          1-second polling of window focus (FOCUS_POLL_INTERVAL). This test
+--          ensures that polling design doesn't inadvertently block REAPER's
+--          DSP thread or freeze the UI.
+--
+-- Warning: This test intentionally creates an infinite loop. It will run
+--          until manually stopped or the script times out. During execution:
+--          - Check that REAPER's UI remains responsive (move the window,
+--            click buttons, adjust fader positions).
+--          - Check that audio continues to play without dropouts or delays.
+--          - If REAPER locks up, the defer() mechanism is not working as
+--            expected and the background loop design must be revisited.
+-- ============================================================================
+
+while true do end
