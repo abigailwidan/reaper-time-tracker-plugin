@@ -76,10 +76,13 @@ Depends on the community `js_ReaScriptAPI` extension for window-focus queries. I
 
 ### Quick Start
 
-1. In REAPER: **Options → Show REAPER resource path in finder**.
-2. Copy this whole repo folder (`reaper-time-tracker-plugin/`) into the `Scripts` folder shown there.
-3. **Actions → Show action list → New action ▾ → Load ReaScript…**, then load all three files from `reaper-time-tracker-plugin/src/`.
-4. Install `js_ReaScriptAPI` via ReaPack (**Extensions → ReaPack → Browse packages**) if not already present, and restart REAPER.
+1. Get the repo onto your machine, either:
+   - `git clone https://github.com/abigailwidan/reaper-time-tracker-plugin.git`, or
+   - on the [GitHub page](https://github.com/abigailwidan/reaper-time-tracker-plugin), **Code → Download ZIP** and unzip it.
+2. In REAPER: **Options → Show REAPER resource path in finder**.
+3. Copy the whole `reaper-time-tracker-plugin/` folder into the `Scripts` folder shown there.
+4. **Actions → Show action list → New action ▾ → Load ReaScript…**, then load all three files from `reaper-time-tracker-plugin/src/`.
+5. Install `js_ReaScriptAPI` via ReaPack (**Extensions → ReaPack → Browse packages**) if not already present, and restart REAPER.
 
 `lib/` must remain a sibling of `src/`; the scripts resolve their modules via a relative `../lib/?.lua` path. The folder names themselves are not load-bearing, but that sibling relationship is.
 
@@ -167,12 +170,46 @@ The `tt_json` and `tt_data` tests are plain Lua with no REAPER dependency and ca
 
 Licensed under the [GNU General Public License v3.0](LICENSE). If you modify and distribute this project, your version must also be released as open source under GPLv3.
 
+## Commit Messages
+
+[Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>): <description>`
+
+| Type | When |
+|---|---|
+| `feat` | New user-facing capability. |
+| `fix` | Bug fix. |
+| `chore` | Setup, tooling, config, dependencies. |
+| `docs` | `.md` file changes. |
+| `test` | Changes relating to tests. |
+| `refactor` | Restructuring, no behaviour change. |
+| `ci` | CI/pipeline config changes. |
+
+**Scope** — the module touched, roughly matching this project's own `lib`/`src` split:
+
+| Scope | Covers |
+|---|---|
+| `background` | `TimeTracker_Background.lua` — the `defer()` polling loop |
+| `project-id` | `lib/tt_project_id.lua` — GUID assignment, tab/Save As detection |
+| `data` | `lib/tt_data.lua`, `lib/tt_paths.lua`, `lib/tt_json.lua` — persistence, loading, report scoping |
+| `report` | `TimeTracker_GenerateReport.lua` — HTML report generation |
+| `email` | `TimeTracker_EmailReport.lua`, `lib/tt_email.lua`, `lib/tt_shell.lua` — the `mailto:` handoff |
+| `deps` | `lib/tt_deps.lua` — `js_ReaScriptAPI` presence check |
+| `docs` | `README.md`, `docs/*.md` |
+| `tests` | `tests/` |
+| `repo` | Root-level config — `.gitignore`, `LICENSE`, folder structure |
+
+Example: `feat(email): add mailto draft composition`
+
+This repo has no issue tracker wired up yet. If one gets added later, append the issue ID at the end: `feat(email): add mailto draft composition (TEA-10)`.
+
+`develop → main` merges happen once reviewed and tested by another group member.
+
 ## Contributing
 
 We welcome contributions! Please:
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/your-feature`)
-3. Commit your changes with clear messages
+3. Commit your changes following the format above
 4. Submit a pull request with documentation
 
 For significant changes, please open an issue first to discuss proposed changes.
