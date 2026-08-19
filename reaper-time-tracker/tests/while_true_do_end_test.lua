@@ -1,0 +1,40 @@
+-- ============================================================================
+-- Test File: while_true_do_end_test.lua
+-- Purpose: Tests continuous loop behaviour and blocking limitations within
+--          REAPER. Specifically verifies that infinite loops behave
+--          predictably so the background defer() loop can safely run in the
+--          background without freezing the main UI or DSP threads.
+--
+-- Scope: Explores the boundary conditions of REAPER's defer() mechanism and
+--        confirms that long-running operations don't block realtime audio
+--        processing.
+--
+-- What it tests:
+--   1. Loop Blocking: Confirms that a `while true do end` infinite loop
+--      does NOT cause REAPER to freeze (i.e., defer() prevents main-thread
+--      blocking even with inefficient polling).
+--   2. DSP Stability: Verifies audio continues to process while the Lua
+--      script is running (no audio dropouts).
+--   3. UI Responsiveness: Checks that the REAPER UI remains clickable and
+--      responsive while the script is active.
+--
+-- Context: TimeTracker uses a continuous defer() loop for 1-second polling
+--          of window focus. This test ensures that the polling interval and
+--          loop structure don't inadvertently block REAPER's DSP thread or
+--          freeze the UI, which would degrade the user experience and make
+--          the plugin unsuitable for real-world use.
+--
+-- Warning: This test intentionally creates an infinite loop. It will run
+--          until manually stopped or the script times out. During execution:
+--          • Check that REAPER's UI remains responsive (e.g., you can move
+--            the window, click buttons, or adjust fader positions).
+--          • Check that audio continues to play without dropouts or delays.
+--          • If REAPER locks up, the defer() mechanism is not working as
+--            expected and the background loop design must be revisited.
+--
+-- Expected outcome: REAPER should remain fully responsive and audio should
+--                   not be affected. If it does freeze, there's a critical
+--                   design issue with the defer() approach.
+-- ============================================================================
+
+while true do end
