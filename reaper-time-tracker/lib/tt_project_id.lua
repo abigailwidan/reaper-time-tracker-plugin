@@ -1,9 +1,21 @@
 -- lib/tt_project_id.lua
 --
--- Milestone 2: Project identity module.
--- Handles tracking the active project, generating/reading persistent GUIDs
--- via ExtState, and detecting file operations (First Save, Save As) to ensure
--- the tracked identity remains accurate.
+-- Purpose: Manage project identity and lifecycle tracking.
+--
+-- This module is responsible for:
+--   - Assigning and persisting unique GUIDs to each project via REAPER's ExtState
+--   - Detecting project tab switches (has_tab_changed)
+--   - Detecting file operations: First Save (unsaved → saved) and Save As (path change)
+--   - Handling temporary session GUIDs for unsaved projects
+--   - Migrating accumulated time data when a project is first saved
+--
+-- Key Design:
+--   - Unsaved projects receive temporary in-memory GUIDs (prefixed "TEMP-")
+--   - Saved projects receive persistent GUIDs stored in ExtState
+--   - ExtState key: project's "TimeTracker" section, "ProjectGUID" attribute
+--   - On file operations, returns a "migrated_from_guid" to facilitate data migration
+--
+-- Dependencies: REAPER API (reaper.EnumProjects, reaper.genGuid, ExtState functions)
 
 local project_id = {}
 
@@ -14,25 +26,36 @@ local active_project_ptr = nil
 local active_project_path = ""
 local active_project_guid = nil
 
--- Generates a REAPER GUID and strips the enclosing braces
--- (e.g. "{123...}" -> "123...") so it can be used cleanly as a JSON key.
+-- Generates a fresh GUID and strips braces for clean JSON key compatibility.
+-- REAPER's reaper.genGuid() returns "{...}", but JSON keys work better without braces.
 local function generate_clean_guid()
   local guid = reaper.genGuid()
   return guid:gsub("{", ""):gsub("}", "")
 end
 
--- Extracts the filename from a full path for display purposes
+-- Extracts human-readable project name from file path.
+-- Returns the filename for saved projects, or "Unsaved Project" if the path is empty.
 local function get_display_name(path)
   if path == "" then return "Unsaved Project" end
   return path:match("([^/\\]+)$") or path
 end
 
--- Called every tracking poll to resolve the current project identity.
--- Returns:
---   has_tab_changed (boolean) - true if the user switched project tabs
---   current_guid (string) - the active GUID for tracking
---   display_name (string) - the filename or "Unsaved Project"
---   migrated_from_guid (string|nil) - the old temp GUID if a First Save occurred
+-- Core polling function: updates and returns the current project identity state.
+--
+-- Called on every tracking poll (nominally ~1 second) to detect:
+--   1. Tab switches (different project pointer)
+--   2. First Save (empty path → real path, generates new GUID)
+--   3. Save As (path change, forces new GUID to avoid duplicates)
+--
+-- Returns (in order):
+--   has_tab_changed (boolean) - true if project pointer changed
+--   current_guid (string) - active GUID for this tracking cycle
+--   display_name (string) - human-readable project name
+--   migrated_from_guid (string|nil) - old GUID if migration occurred (for data relocation)
+--
+-- Side effects:
+--   - Updates ExtState with GUID for saved projects
+--   - Logs file operations to console
 function project_id.update()
   local current_ptr, current_path = reaper.EnumProjects(-1, "")
   local migrated_from_guid = nil

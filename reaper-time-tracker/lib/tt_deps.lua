@@ -1,19 +1,29 @@
--- tt_deps.lua
--- Checks for the js_ReaScriptAPI extension, which this project depends on
--- for OS-level window-focus queries (stock ReaScript has no such call).
--- See DOCS.md > Technology Choice Rationale.
+-- lib/tt_deps.lua
+--
+-- Purpose: Validate required external dependencies before running TimeTracker.
+--
+-- TimeTracker depends on js_ReaScriptAPI, a community-maintained REAPER extension
+-- that provides OS-level window management functions unavailable in stock ReaScript.
+-- Specifically, we need JS_Window_GetForeground() to query the OS window focus,
+-- which enables focus-based time tracking (vs. idle detection).
+--
+-- This module checks for the presence of the extension and guides the user to
+-- install it via ReaPack if missing. It does NOT handle installation—it only
+-- detects and warns.
+--
+-- Dependencies: REAPER API (reaper.JS_Window_GetForeground)
 
 local tt_deps = {}
 
--- True if js_ReaScriptAPI is installed and available in this instance.
--- Tests for JS_Window_GetForeground specifically, since that's the one
--- function this project actually needs (no package-name lookup needed).
+-- Returns true if js_ReaScriptAPI is installed and JS_Window_GetForeground is available.
+-- This function is tested on startup to bail gracefully if the extension is missing.
 function tt_deps.check_js_reascript_api()
   return type(reaper.JS_Window_GetForeground) == "function"
 end
 
--- Shows a message box pointing the user to installing the extension via
--- ReaPack. Caller is responsible for exiting afterwards.
+-- Displays a user-facing message box with instructions for installing js_ReaScriptAPI.
+-- Guides the user through: Extensions > ReaPack > Browse Packages > search > install > restart.
+-- Call this before exiting if the dependency check fails.
 function tt_deps.warn_missing_js_reascript_api()
   reaper.ShowMessageBox(
     "TimeTracker requires the js_ReaScriptAPI extension, which isn't installed.\n\n" ..

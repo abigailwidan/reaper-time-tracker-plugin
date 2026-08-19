@@ -1,13 +1,40 @@
 -- lib/tt_json.lua
--- Lightweight JSON encode/decode for TimeTracker.
+--
+-- Purpose: Pure-Lua JSON encoder and decoder (no external dependencies).
+--
+-- This is a vendored, minimal JSON implementation tailored for TimeTracker's
+-- data serialization needs. It avoids external JSON libraries to keep the
+-- plugin lightweight and self-contained.
+--
+-- Features:
+--   - Encodes: Lua tables (objects/arrays), strings, numbers, booleans, nil
+--   - Decodes: Parses JSON strings back into Lua tables
+--   - Automatic array detection: numeric keys → JSON arrays, string keys → JSON objects
+--   - Escape handling: Properly encodes special characters (\n, \t, \r, etc.)
+--   - Error handling: Silently returns nil if JSON parse fails
+--
+-- Usage:
+--   local data = { name = "Project", duration = 3600, active = true }
+--   local json_str = json.encode(data)  -- {"name":"Project","duration":3600,"active":true}
+--   local restored = json.decode(json_str)  -- Back to Lua table
+--
+-- Limitations:
+--   - Does NOT handle cyclic tables (will infinite loop)
+--   - Numbers are stored as Lua floats (potential precision loss for very large integers)
 
 local json = {}
 
+-- Helper: Escapes a string for JSON representation.
+-- Handles special chars: newlines, tabs, quotes, backslashes, control characters.
+-- Unmapped control chars are encoded as \uXXXX hex escapes.
 local function escape_str(s)
   local escape_char_map = { ["\\"] = "\\", ["\""] = "\"", ["\b"] = "b", ["\f"] = "f", ["\n"] = "n", ["\r"] = "r", ["\t"] = "t" }
   return '"' .. s:gsub('[%c\\"]', function(c) return "\\" .. (escape_char_map[c] or string.format("u%04x", c:byte())) end) .. '"'
 end
 
+-- Encodes a Lua value into a JSON string.
+-- Recursively handles tables, strings, numbers, booleans, nil.
+-- Automatically detects whether a table should be encoded as a JSON array or object.
 function json.encode(val)
   local t = type(val)
   if t == "number" or t == "boolean" then
@@ -35,7 +62,10 @@ function json.encode(val)
   return "null"
 end
 
--- Compact Recursive Descent JSON Decoder
+-- Compact recursive descent JSON parser.
+-- Implements a minimal state machine to tokenize and parse JSON.
+-- Returns: (parsed_value, next_position_in_string)
+-- Does NOT support JSON5 extensions (trailing commas, unquoted keys, etc.).
 local function parse(str, pos)
   while true do
     local c = str:sub(pos, pos)
@@ -104,6 +134,9 @@ local function parse(str, pos)
   else error("JSON parse error") end
 end
 
+-- Public API: Decode a JSON string into a Lua value.
+-- Returns the parsed Lua value on success, or nil if parsing fails (catches exceptions safely).
+-- Use with TimeTracker data files to restore session records on startup.
 function json.decode(str)
   local ok, val = pcall(parse, str, 1)
   if ok then return val else return nil end
