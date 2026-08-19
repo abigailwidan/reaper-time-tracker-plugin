@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>TimeTracker Session Report</title>
+  <style>
+    :root {
+      --chassis: #24221d;
+      --chassis-hi: #302d25;
+      --chassis-line: #17150f;
+      --panel: #f3ead8;
+      --panel-line: #e1d3b3;
+      --ink: #2b2318;
+      --ink-soft: #7a6c52;
+      --silk: #d8cbab;
+      --silk-dim: #8c8064;
+      --copper: #c17a3d;
+      --copper-hi: #e0a05a;
+      --led-green: #6f9a52;
+      --led-green-hi: #8fbf6a;
+      --led-red: #b5533f;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background:
+        radial-gradient(ellipse at top, var(--chassis-hi), var(--chassis) 70%),
+        repeating-linear-gradient(180deg, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 3px);
+      color: var(--silk);
+      margin: 0;
+      padding: 48px 20px 60px;
+      line-height: 1.5;
+    }
+
+    .rack { max-width: 920px; margin: 0 auto; }
+
+    .masthead {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 24px;
+      background: linear-gradient(180deg, var(--chassis-hi), var(--chassis));
+      border: 1px solid var(--chassis-line);
+      border-top: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 26px 32px;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04);
+      position: relative;
+    }
+
+    .masthead::before, .masthead::after {
+      content: "";
+      position: absolute;
+      top: 14px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #6b6353, #171510);
+    }
+    .masthead::before { left: 14px; }
+    .masthead::after { right: 14px; }
+
+    .wordmark .brand {
+      font-size: 1.9rem;
+      font-weight: 800;
+      letter-spacing: 0.09em;
+      color: var(--silk);
+      text-transform: uppercase;
+    }
+    .wordmark .tagline {
+      font-size: 0.78rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--silk-dim);
+      margin-top: 6px;
+    }
+
+    .counter-unit {
+      background: var(--panel);
+      border: 1px solid var(--panel-line);
+      border-radius: 7px;
+      padding: 10px 20px;
+      box-shadow: inset 0 2px 6px rgba(0,0,0,0.35), inset 0 -1px 0 rgba(255,255,255,0.4);
+      text-align: right;
+      min-width: 200px;
+    }
+    .counter-display {
+      font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+      font-size: 2.1rem;
+      font-weight: 700;
+      color: var(--ink);
+      letter-spacing: 0.04em;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .counter-label {
+      font-size: 0.62rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--ink-soft);
+      margin-top: 6px;
+    }
+
+    .meta-strip {
+      margin: 20px 4px 28px;
+      font-size: 0.78rem;
+      letter-spacing: 0.03em;
+      color: var(--silk-dim);
+      text-transform: uppercase;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--panel-line);
+      border-top: 1px solid #fffdf6;
+      border-radius: 10px;
+      padding: 30px 32px 12px;
+      margin-bottom: 26px;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.28);
+    }
+
+    .panel-title {
+      margin: 0 0 18px;
+      font-size: 1.02rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--ink);
+    }
+    .panel-title .panel-sub {
+      font-weight: 500;
+      text-transform: none;
+      letter-spacing: 0;
+      color: var(--ink-soft);
+      font-size: 0.85rem;
+      margin-left: 8px;
+    }
+
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      text-align: left;
+      font-size: 0.68rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ink-soft);
+      font-weight: 700;
+      padding: 0 10px 10px;
+      border-bottom: 1px solid var(--panel-line);
+    }
+    td {
+      padding: 14px 10px;
+      border-bottom: 1px solid var(--panel-line);
+      vertical-align: middle;
+      color: var(--ink);
+    }
+    tr:last-child td { border-bottom: none; }
+    tbody tr:nth-child(even) { background: rgba(43,35,24,0.035); }
+
+    .num-cell { text-align: right; }
+    .mono { font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Consolas, monospace; font-size: 0.86rem; }
+
+    .time-cell { white-space: nowrap; }
+    .time-date { font-weight: 600; font-size: 0.86rem; color: var(--ink); }
+    .time-clock { font-size: 0.76rem; color: var(--ink-soft); margin-top: 3px; letter-spacing: 0.02em; }
+
+    .chip {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 8px;
+      box-shadow: 0 0 0 2px rgba(255,255,255,0.5);
+    }
+    .proj-name { font-weight: 700; }
+    .proj-guid {
+      font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+      font-size: 0.72rem;
+      color: var(--ink-soft);
+      margin-top: 3px;
+      margin-left: 16px;
+    }
+
+    .hours-readout {
+      font-family: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .pct-readout { font-size: 0.68rem; color: var(--ink-soft); margin-top: 2px; }
+
+    .meter { display: flex; gap: 2px; min-width: 220px; }
+    .seg { flex: 1; height: 15px; border-radius: 1px; background: var(--panel-line); box-shadow: inset 0 1px 2px rgba(0,0,0,0.15); }
+    .seg.on.seg-green { background: linear-gradient(180deg, var(--led-green-hi), var(--led-green)); box-shadow: 0 0 4px rgba(111,154,82,0.6); }
+    .seg.on.seg-amber { background: linear-gradient(180deg, var(--copper-hi), var(--copper)); box-shadow: 0 0 4px rgba(193,122,61,0.6); }
+    .seg.on.seg-red { background: linear-gradient(180deg, #cf6d55, var(--led-red)); box-shadow: 0 0 4px rgba(181,83,63,0.6); }
+
+    .live-badge {
+      display: inline-block;
+      margin-left: 8px;
+      font-size: 0.66rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #fff;
+      background: var(--led-green);
+      padding: 2px 7px;
+      border-radius: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    .empty-state { text-align: center; color: var(--ink-soft); padding: 30px 0; }
+
+    .fine-print {
+      text-align: center;
+      font-size: 0.72rem;
+      letter-spacing: 0.03em;
+      color: var(--silk-dim);
+      margin-top: 32px;
+      padding: 0 20px;
+    }
+
+    @media print {
+      :root {
+        --chassis: #ffffff;
+        --chassis-hi: #ffffff;
+        --chassis-line: #cccccc;
+        --silk: #111111;
+        --silk-dim: #444444;
+      }
+      body { background: #fff; }
+      .masthead, .panel { box-shadow: none; }
+      .masthead::before, .masthead::after { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="rack">
+    <header class="masthead">
+      <div class="wordmark">
+        <div class="brand">TimeTracker</div>
+        <div class="tagline">Studio Session Report</div>
+      </div>
+      <div class="counter-unit">
+        <div class="counter-display">000018.6</div>
+        <div class="counter-label">Total Hours Logged</div>
+      </div>
+    </header>
+
+    <div class="meta-strip">Generated 17 Aug 2026, 19:06 &middot; 4 project(s) &middot; 14 session(s)</div>
+
+    <section class="panel">
+      <h2 class="panel-title">Project Totals<span class="panel-sub">relative share of tracked time</span></h2>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 30%;">Project</th>
+            <th style="width: 40%;">Meter</th>
+            <th style="text-align: right; width: 30%;">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+                <tr>
+        <td>
+          <div class="proj-name"><span class="chip" style="background: hsl(68deg 45% 42%);"></span>Harborline_EP_Mix_v3.RPP</div>
+          <div class="proj-guid">a1b2c3d4-e5f6-4a7b-8c9d-0123456789ab</div>
+        </td>
+        <td>
+          <div class="meter"><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-amber on"></span><span class="seg seg-amber on"></span><span class="seg seg-amber on"></span><span class="seg seg-amber on"></span><span class="seg seg-amber on"></span><span class="seg seg-amber on"></span><span class="seg seg-red on"></span><span class="seg seg-red on"></span><span class="seg seg-red on"></span><span class="seg seg-red on"></span></div>
+        </td>
+        <td class="num-cell">
+          <div class="hours-readout">13.58 hrs</div>
+          <div class="pct-readout">100% of peak</div>
+        </td>
+      </tr>
+          <tr>
+        <td>
+          <div class="proj-name"><span class="chip" style="background: hsl(12deg 45% 42%);"></span>Client Voiceover Session.RPP</div>
+          <div class="proj-guid">11223344-5566-4778-899a-abbccddeeff0</div>
+        </td>
+        <td>
+          <div class="meter"><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-amber off"></span><span class="seg seg-amber off"></span><span class="seg seg-amber off"></span><span class="seg seg-amber off"></span><span class="seg seg-amber off"></span><span class="seg seg-amber off"></span><span class="seg seg-red off"></span><span class="seg seg-red off"></span><span class="seg seg-red off"></span><span class="seg seg-red off"></span></div>
+        </td>
+        <td class="num-cell">
+          <div class="hours-readout">2.62 hrs</div>
+          <div class="pct-readout">19% of peak</div>
+        </td>
+      </tr>
+          <tr>
+        <td>
+          <div class="proj-name"><span class="chip" style="background: hsl(176deg 45% 42%);"></span>Nkosi &amp; Sons - Jingle.RPP</div>
+          <div class="proj-guid">f6e5d4c3-b2a1-4f8e-9d7c-abcdef012345</div>
+        </td>
+        <td>
+          <div class="meter"><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-green on"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-amber off"></span><span class="seg seg-amber off"></span><span class="seg seg-amber off"></span><span class="seg seg-amber off"></span><span class="seg seg-amber off"></span><span class="seg seg-amber off"></span><span class="seg seg-red off"></span><span class="seg seg-red off"></span><span class="seg seg-red off"></span><span class="seg seg-red off"></span></div>
+        </td>
+        <td class="num-cell">
+          <div class="hours-readout">2.12 hrs</div>
+          <div class="pct-readout">15% of peak</div>
+        </td>
+      </tr>
+          <tr>
+        <td>
+          <div class="proj-name"><span class="chip" style="background: hsl(216deg 45% 42%);"></span>Podcast_Ep12_Master.RPP</div>
+          <div class="proj-guid">99887766-5544-4332-a1b0-c9d8e7f60123</div>
+        </td>
+        <td>
+          <div class="meter"><span class="seg seg-green on"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-green off"></span><span class="seg seg-amber off"></span><span class="seg seg-amber off"></span><span class="seg seg-amber off"></span><span class="seg seg-amber off"></span><span class="seg seg-amber off"></span><span class="seg seg-amber off"></span><span class="seg seg-red off"></span><span class="seg seg-red off"></span><span class="seg seg-red off"></span><span class="seg seg-red off"></span></div>
+        </td>
+        <td class="num-cell">
+          <div class="hours-readout">0.33 hrs</div>
+          <div class="pct-readout">2% of peak</div>
+        </td>
+      </tr>
+            </tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2 class="panel-title">Session Log<span class="panel-sub">chronological, newest first</span></h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Project</th>
+            <th>Start</th>
+            <th>End</th>
+            <th style="text-align: right;">Duration</th>
+          </tr>
+        </thead>
+        <tbody>
+                <tr>
+        <td><span class="chip" style="background: hsl(68deg 45% 42%);"></span>Harborline_EP_Mix_v3.RPP</td>
+        <td class="time-cell"><div class="time-date">Mon 17 Aug</div><div class="time-clock mono">9:00 AM</div></td>
+        <td class="time-cell"><div class="time-date">Mon 17 Aug</div><div class="time-clock mono">9:47 AM</div></td>
+        <td class="num-cell mono">0.78 hrs<span class="live-badge">&#9679; live</span></td>
+      </tr>
+          <tr>
+        <td><span class="chip" style="background: hsl(68deg 45% 42%);"></span>Harborline_EP_Mix_v3.RPP</td>
+        <td class="time-cell"><div class="time-date">Sun 16 Aug</div><div class="time-clock mono">1:45 PM</div></td>
+        <td class="time-cell"><div class="time-date">Sun 16 Aug</div><div class="time-clock mono">5:15 PM</div></td>
+        <td class="num-cell mono">3.50 hrs</td>
+      </tr>
+          <tr>
+        <td><span class="chip" style="background: hsl(68deg 45% 42%);"></span>Harborline_EP_Mix_v3.RPP</td>
+        <td class="time-cell"><div class="time-date">Sat 15 Aug</div><div class="time-clock mono">11:00 AM</div></td>
+        <td class="time-cell"><div class="time-date">Sat 15 Aug</div><div class="time-clock mono">12:28 PM</div></td>
+        <td class="num-cell mono">1.47 hrs</td>
+      </tr>
+          <tr>
+        <td><span class="chip" style="background: hsl(12deg 45% 42%);"></span>Client Voiceover Session.RPP</td>
+        <td class="time-cell"><div class="time-date">Fri 14 Aug</div><div class="time-clock mono">3:20 PM</div></td>
+        <td class="time-cell"><div class="time-date">Fri 14 Aug</div><div class="time-clock mono">4:22 PM</div></td>
+        <td class="num-cell mono">1.03 hrs</td>
+      </tr>
+          <tr>
+        <td><span class="chip" style="background: hsl(68deg 45% 42%);"></span>Harborline_EP_Mix_v3.RPP</td>
+        <td class="time-cell"><div class="time-date">Thu 13 Aug</div><div class="time-clock mono">8:10 PM</div></td>
+        <td class="time-cell"><div class="time-date">Thu 13 Aug</div><div class="time-clock mono">11:05 PM</div></td>
+        <td class="num-cell mono">2.92 hrs</td>
+      </tr>
+          <tr>
+        <td><span class="chip" style="background: hsl(12deg 45% 42%);"></span>Client Voiceover Session.RPP</td>
+        <td class="time-cell"><div class="time-date">Wed 12 Aug</div><div class="time-clock mono">10:30 AM</div></td>
+        <td class="time-cell"><div class="time-date">Wed 12 Aug</div><div class="time-clock mono">11:10 AM</div></td>
+        <td class="num-cell mono">0.67 hrs</td>
+      </tr>
+          <tr>
+        <td><span class="chip" style="background: hsl(176deg 45% 42%);"></span>Nkosi &amp; Sons - Jingle.RPP</td>
+        <td class="time-cell"><div class="time-date">Tue 11 Aug</div><div class="time-clock mono">5:00 PM</div></td>
+        <td class="time-cell"><div class="time-date">Tue 11 Aug</div><div class="time-clock mono">5:22 PM</div></td>
+        <td class="num-cell mono">0.37 hrs</td>
+      </tr>
+          <tr>
+        <td><span class="chip" style="background: hsl(68deg 45% 42%);"></span>Harborline_EP_Mix_v3.RPP</td>
+        <td class="time-cell"><div class="time-date">Tue 11 Aug</div><div class="time-clock mono">9:30 AM</div></td>
+        <td class="time-cell"><div class="time-date">Tue 11 Aug</div><div class="time-clock mono">10:30 AM</div></td>
+        <td class="num-cell mono">1.00 hrs</td>
+      </tr>
+          <tr>
+        <td><span class="chip" style="background: hsl(68deg 45% 42%);"></span>Harborline_EP_Mix_v3.RPP</td>
+        <td class="time-cell"><div class="time-date">Mon 10 Aug</div><div class="time-clock mono">2:00 PM</div></td>
+        <td class="time-cell"><div class="time-date">Mon 10 Aug</div><div class="time-clock mono">4:20 PM</div></td>
+        <td class="num-cell mono">2.33 hrs</td>
+      </tr>
+          <tr>
+        <td><span class="chip" style="background: hsl(12deg 45% 42%);"></span>Client Voiceover Session.RPP</td>
+        <td class="time-cell"><div class="time-date">Sun 09 Aug</div><div class="time-clock mono">4:00 PM</div></td>
+        <td class="time-cell"><div class="time-date">Sun 09 Aug</div><div class="time-clock mono">4:55 PM</div></td>
+        <td class="num-cell mono">0.92 hrs</td>
+      </tr>
+          <tr>
+        <td><span class="chip" style="background: hsl(68deg 45% 42%);"></span>Harborline_EP_Mix_v3.RPP</td>
+        <td class="time-cell"><div class="time-date">Sat 08 Aug</div><div class="time-clock mono">10:15 AM</div></td>
+        <td class="time-cell"><div class="time-date">Sat 08 Aug</div><div class="time-clock mono">11:50 AM</div></td>
+        <td class="num-cell mono">1.58 hrs</td>
+      </tr>
+          <tr>
+        <td><span class="chip" style="background: hsl(176deg 45% 42%);"></span>Nkosi &amp; Sons - Jingle.RPP</td>
+        <td class="time-cell"><div class="time-date">Fri 07 Aug</div><div class="time-clock mono">9:45 AM</div></td>
+        <td class="time-cell"><div class="time-date">Fri 07 Aug</div><div class="time-clock mono">11:00 AM</div></td>
+        <td class="num-cell mono">1.25 hrs</td>
+      </tr>
+          <tr>
+        <td><span class="chip" style="background: hsl(176deg 45% 42%);"></span>Nkosi &amp; Sons - Jingle.RPP</td>
+        <td class="time-cell"><div class="time-date">Thu 06 Aug</div><div class="time-clock mono">1:00 PM</div></td>
+        <td class="time-cell"><div class="time-date">Thu 06 Aug</div><div class="time-clock mono">1:30 PM</div></td>
+        <td class="num-cell mono">0.50 hrs</td>
+      </tr>
+          <tr>
+        <td><span class="chip" style="background: hsl(216deg 45% 42%);"></span>Podcast_Ep12_Master.RPP</td>
+        <td class="time-cell"><div class="time-date">Tue 04 Aug</div><div class="time-clock mono">8:00 AM</div></td>
+        <td class="time-cell"><div class="time-date">Tue 04 Aug</div><div class="time-clock mono">8:20 AM</div></td>
+        <td class="num-cell mono">0.33 hrs</td>
+      </tr>
+            </tbody>
+      </table>
+    </section>
+
+    <p class="fine-print">Time recorded via active-window focus tracking inside REAPER. Generated automatically by TimeTracker.</p>
+  </div>
+</body>
+</html>
+  

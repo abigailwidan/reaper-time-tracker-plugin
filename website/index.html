@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TimeTracker for REAPER — Bill the hours you can show</title>
+<meta name="description" content="A REAPER ReaScript that logs active work time per project from window focus, then turns it into a self-contained HTML report you can hand to a client alongside the invoice.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@400;600;700&family=DM+Mono:wght@400;500&family=Hanken+Grotesk:wght@400..700&display=swap" rel="stylesheet">
+<style>
+  /* ═══════════════════════════════════════════════════════════════════════
+     Tokens — inherited from the generated report (docs/sample-report.html)
+     so the site and the artifact it produces read as one system.
+     --well is the only addition: REAPER's arrange view sits darker than
+     its chassis, and the hero timeline is an arrange view.
+     ═══════════════════════════════════════════════════════════════════════ */
+  :root {
+    --chassis:      #24221d;
+    --chassis-hi:   #302d25;
+    --chassis-line: #17150f;
+    --well:         #1a1814;
+    --well-line:    #332f26;
+    --panel:        #f3ead8;
+    --panel-line:   #e1d3b3;
+    --ink:          #2b2318;
+    --ink-mid:      #3d3324;
+    --ink-soft:     #7a6c52;
+    --silk:         #d8cbab;
+    --silk-dim:     #8c8064;
+    --copper:       #c17a3d;
+    --copper-hi:    #e0a05a;
+    --led-green:    #6f9a52;
+    --led-green-hi: #8fbf6a;
+    --led-red:      #b5533f;
+
+    /* Project hues, identical to the report's chip colours */
+    --p1: 68;   /* Harborline_EP_Mix_v3   */
+    --p2: 12;   /* Client Voiceover       */
+    --p3: 176;  /* Nkosi & Sons - Jingle  */
+    --p4: 216;  /* Podcast_Ep12_Master    */
+
+    /* Three type registers, matching the three on a real console face:
+       silkscreened legend, LED readout, and printed manual copy. */
+    --legend: "Saira Condensed", "Helvetica Neue Condensed", "Arial Narrow", sans-serif;
+    --readout: "DM Mono", ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    --body: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--silk);
+    background:
+      radial-gradient(ellipse at 50% -10%, var(--chassis-hi), var(--chassis) 68%),
+      repeating-linear-gradient(180deg, rgba(255,255,255,0.015) 0, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 3px);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .rack { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  :where(a, button):focus-visible {
+    outline: 2px solid var(--copper-hi);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  /* ── Silkscreen legend: every small uppercase caption on the page ─────── */
+  .legend {
+    font-family: var(--legend);
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--silk-dim);
+    margin: 0;
+  }
+  /* Raised above .band-head p / .hero p so the legend keeps its own metrics. */
+  .band-head p.legend,
+  .hero p.legend { margin: 0; }
+
+  /* ── Masthead ─────────────────────────────────────────────────────────── */
+  .masthead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 20px 32px;
+    flex-wrap: wrap;
+    padding: 26px 0 22px;
+    border-bottom: 1px solid rgba(216,203,171,0.13);
+  }
+  .wordmark {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .wordmark b {
+    font-family: var(--legend);
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--silk);
+    line-height: 1;
+  }
+  .wordmark span {
+    font-family: var(--readout);
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    color: var(--silk-dim);
+  }
+
+  .nav { display: flex; align-items: baseline; gap: 26px; flex-wrap: wrap; }
+  .nav a {
+    font-family: var(--legend);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--silk-dim);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .nav a:hover { color: var(--copper-hi); }
+  .nav .nav-repo { color: var(--silk); }
+  .nav .nav-repo:hover { color: var(--copper-hi); }
+
+  /* ── Hero ─────────────────────────────────────────────────────────────── */
+  .hero { padding: 68px 0 0; }
+  .hero-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: 48px;
+    align-items: end;
+  }
+  .hero h1 {
+    font-family: var(--legend);
+    font-size: clamp(2.9rem, 7vw, 5.1rem);
+    font-weight: 700;
+    line-height: 0.94;
+    letter-spacing: -0.005em;
+    text-transform: uppercase;
+    margin: 18px 0 0;
+    color: #f2e9d6;
+  }
+  .hero h1 em { font-style: normal; color: var(--copper-hi); }
+  .hero .lede {
+    font-size: 1.08rem;
+    color: var(--silk);
+    opacity: 0.84;
+    margin: 22px 0 0;
+    max-width: 52ch;
+  }
+
+  .cta-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 30px; }
+  .btn {
+    display: inline-block;
+    font-family: var(--legend);
+    font-size: 0.86rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    text-decoration: none;
+    padding: 13px 26px;
+    border-radius: 5px;
+    transition: transform 0.12s, box-shadow 0.15s, background 0.15s, border-color 0.15s;
+  }
+  .btn-primary {
+    background: linear-gradient(180deg, var(--copper-hi), var(--copper));
+    color: #2a1b0c;
+    border: 1px solid #8f5626;
+    box-shadow: 0 5px 14px rgba(193,122,61,0.28), inset 0 1px 0 rgba(255,255,255,0.35);
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(193,122,61,0.38), inset 0 1px 0 rgba(255,255,255,0.35); }
+  .btn-ghost {
+    background: rgba(255,255,255,0.03);
+    color: var(--silk);
+    border: 1px solid rgba(216,203,171,0.26);
+  }
+  .btn-ghost:hover { transform: translateY(-1px); border-color: var(--silk-dim); background: rgba(255,255,255,0.06); }
+
+  /* Odometer readout, same face and leading zeros as the report's counter */
+  .odometer {
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-radius: 7px;
+    padding: 16px 22px 14px;
+    box-shadow: inset 0 2px 6px rgba(0,0,0,0.35), inset 0 -1px 0 rgba(255,255,255,0.4), 0 10px 24px rgba(0,0,0,0.3);
+    text-align: right;
+  }
+  .odometer-value {
+    font-family: var(--readout);
+    font-size: clamp(2rem, 4.4vw, 2.9rem);
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .odometer-value i { font-style: normal; color: #c9bb9c; }
+  .odometer-label {
+    font-family: var(--legend);
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-top: 8px;
+  }
+
+  /* ═══ SIGNATURE: the arrange view ═══════════════════════════════════════
+     Two real weeks from docs/sample-report.html, drawn the way REAPER draws
+     them: date ruler, one lane per project, one clip per session, clip
+     length proportional to duration. A playhead sweeps once on load. */
+  .arrange {
+    margin: 46px 0 0;
+    background: var(--well);
+    border: 1px solid var(--chassis-line);
+    border-top: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    box-shadow: inset 0 3px 14px rgba(0,0,0,0.5), 0 14px 30px rgba(0,0,0,0.3);
+    overflow: hidden;
+  }
+  .arrange-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px 24px;
+    flex-wrap: wrap;
+    padding: 14px 20px;
+    background: linear-gradient(180deg, var(--chassis-hi), var(--chassis));
+    border-bottom: 1px solid var(--chassis-line);
+  }
+  .transport { display: flex; align-items: center; gap: 10px; }
+  .rec-dot {
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--led-green);
+    box-shadow: 0 0 8px rgba(111,154,82,0.85);
+  }
+  .arrange-head .legend { font-size: 0.74rem; }
+
+  .arrange-body { position: relative; padding: 0 20px 18px; --gutter: 188px; }
+
+  /* Date ruler */
+  .ruler {
+    position: relative;
+    height: 26px;
+    margin-left: var(--gutter);
+    border-bottom: 1px solid var(--well-line);
+  }
+  .ruler span {
+    position: absolute;
+    top: 7px;
+    transform: translateX(-50%);
+    font-family: var(--readout);
+    font-size: 0.66rem;
+    letter-spacing: 0.04em;
+    color: var(--silk-dim);
+    white-space: nowrap;
+  }
+  .ruler span::after {
+    content: "";
+    position: absolute;
+    left: 50%; bottom: -8px;
+    width: 1px; height: 5px;
+    background: var(--well-line);
+  }
+
+  .lane {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 42px;
+    border-bottom: 1px solid rgba(51,47,38,0.55);
+  }
+  .lane:last-of-type { border-bottom: none; }
+
+  .lane-name {
+    width: var(--gutter);
+    flex: none;
+    padding-right: 16px;
+    font-family: var(--readout);
+    font-size: 0.7rem;
+    letter-spacing: 0.01em;
+    color: var(--silk);
+    opacity: 0.72;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .lane-name::before {
+    content: "";
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: 1px;
+    background: hsl(var(--h) 45% 46%);
+  }
+
+  /* One gridline per day, the way REAPER rules its arrange view. Sparse data
+     then reads as a timeline with gaps rather than as empty space. */
+  .lane-track {
+    position: relative;
+    flex: 1;
+    height: 100%;
+    background-image: repeating-linear-gradient(90deg,
+      rgba(216,203,171,0.07) 0, rgba(216,203,171,0.07) 1px,
+      transparent 1px, transparent calc(100% / 14));
+  }
+
+  .clip {
+    position: absolute;
+    top: 7px;
+    height: 28px;
+    left: var(--l);
+    width: var(--w);
+    min-width: 13px;
+    border-radius: 3px;
+    background:
+      linear-gradient(180deg, hsl(var(--h) 48% 52%), hsl(var(--h) 45% 36%));
+    border: 1px solid hsl(var(--h) 40% 24%);
+    box-shadow: inset 0 1px 0 hsl(var(--h) 55% 66%);
+    opacity: 0;
+    transform: scaleX(0.55);
+    transform-origin: left center;
+    animation: clip-in 0.42s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+    animation-delay: var(--d);
+  }
+  /* Waveform-ish texture, the way an audio item reads in the arrange view */
+  .clip::before {
+    content: "";
+    position: absolute;
+    inset: 5px 3px;
+    background: repeating-linear-gradient(90deg,
+      rgba(255,255,255,0.22) 0, rgba(255,255,255,0.22) 1px,
+      transparent 1px, transparent 4px);
+    border-radius: 1px;
+  }
+  .clip::after {
+    content: attr(data-hrs);
+    position: absolute;
+    left: 50%; top: -25px;
+    transform: translateX(-50%);
+    font-family: var(--readout);
+    font-size: 0.66rem;
+    color: var(--copper-hi);
+    background: var(--well);
+    border: 1px solid var(--well-line);
+    border-radius: 3px;
+    padding: 1px 6px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.14s;
+  }
+  .clip:hover::after { opacity: 1; }
+  .clip.live { box-shadow: inset 0 1px 0 hsl(var(--h) 55% 66%), 0 0 0 1px var(--led-green-hi), 0 0 10px rgba(143,191,106,0.5); }
+
+  @keyframes clip-in {
+    to { opacity: 1; transform: scaleX(1); }
+  }
+
+  .playhead {
+    position: absolute;
+    top: 0; bottom: 18px;
+    /* Absolute children sit against the padding box, so the 20px inline
+       padding has to be added back to line the sweep up with the lanes. */
+    left: calc(var(--gutter) + 20px);
+    width: calc(100% - var(--gutter) - 40px);
+    pointer-events: none;
+  }
+  .playhead::before {
+    content: "";
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: 1px;
+    background: linear-gradient(180deg, var(--copper-hi), rgba(224,160,90,0.15));
+    box-shadow: 0 0 8px rgba(224,160,90,0.6);
+    animation: sweep 2.9s cubic-bezier(0.35, 0, 0.65, 1) forwards;
+  }
+  @keyframes sweep {
+    from { transform: translateX(0); opacity: 1; }
+    92%  { opacity: 1; }
+    to   { transform: translateX(100%); opacity: 0; }
+  }
+
+  .arrange-foot {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px 24px;
+    flex-wrap: wrap;
+    padding: 14px 20px;
+    border-top: 1px solid var(--well-line);
+    font-family: var(--readout);
+    font-size: 0.7rem;
+    color: var(--silk-dim);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .clip { animation: none; opacity: 1; transform: none; }
+    .playhead { display: none; }
+  }
+
+  /* ── Bands ────────────────────────────────────────────────────────────── */
+  .band { padding: 78px 0 0; }
+  .band-head { margin-bottom: 32px; }
+  .band-head h2 {
+    font-family: var(--legend);
+    font-size: clamp(1.9rem, 3.6vw, 2.7rem);
+    font-weight: 700;
+    line-height: 1.02;
+    text-transform: uppercase;
+    letter-spacing: 0.005em;
+    margin: 12px 0 0;
+    color: #f2e9d6;
+  }
+  .band-head p {
+    color: var(--silk);
+    opacity: 0.78;
+    margin: 14px 0 0;
+    max-width: 66ch;
+  }
+
+  /* ── Cream panels ─────────────────────────────────────────────────────── */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-top: 1px solid #fffdf6;
+    border-radius: 10px;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.28);
+    color: var(--ink);
+    padding: 30px 32px;
+  }
+  .panel-title {
+    font-family: var(--legend);
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink);
+    margin: 0 0 20px;
+  }
+  .panel-title small {
+    font-family: var(--body);
+    font-size: 0.82rem;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ink-soft);
+    margin-left: 10px;
+  }
+  code {
+    font-family: var(--readout);
+    font-size: 0.86em;
+    background: rgba(43,35,24,0.07);
+    border: 1px solid var(--panel-line);
+    border-radius: 3px;
+    padding: 1px 5px;
+    color: #4a3d29;
+  }
+
+  /* ── Modules (the two halves of the plugin) ───────────────────────────── */
+  .modules { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
+  .module { display: flex; flex-direction: column; }
+  .module-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    align-self: flex-start;
+    font-family: var(--legend);
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #fff;
+    padding: 4px 12px;
+    border-radius: 3px;
+    margin-bottom: 16px;
+  }
+  .module-tag.is-track { background: var(--led-green); }
+  .module-tag.is-report { background: var(--copper); }
+  .module h3 {
+    font-family: var(--legend);
+    font-size: 1.75rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    margin: 0 0 4px;
+    color: var(--ink);
+  }
+  .module .who {
+    font-family: var(--readout);
+    font-size: 0.72rem;
+    color: var(--ink-soft);
+    margin-bottom: 16px;
+  }
+  .module > p { margin: 0 0 20px; color: var(--ink-mid); }
+  .module ul { list-style: none; margin: 0; padding: 0; }
+  .module li {
+    position: relative;
+    padding: 12px 0 12px 24px;
+    border-top: 1px solid var(--panel-line);
+    font-size: 0.94rem;
+    color: var(--ink-mid);
+  }
+  .module li::before {
+    content: "";
+    position: absolute;
+    left: 2px; top: 20px;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.5);
+  }
+  .module.is-track li::before { background: var(--led-green); }
+  .module.is-report li::before { background: var(--copper); }
+  .module li b { color: var(--ink); font-weight: 700; }
+
+  /* ── Signal chain: a real chain, so it's typed as one ─────────────────── */
+  .chain { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; }
+  .stage {
+    position: relative;
+    padding: 24px 22px 22px;
+    background: linear-gradient(180deg, var(--chassis-hi), var(--chassis));
+    border: 1px solid var(--chassis-line);
+    border-left-width: 0;
+  }
+  .stage:first-child { border-left-width: 1px; border-radius: 9px 0 0 9px; }
+  .stage:last-child { border-radius: 0 9px 9px 0; }
+  /* Patch point between stages */
+  .stage + .stage::before {
+    content: "";
+    position: absolute;
+    left: -5px; top: 50%;
+    width: 9px; height: 9px;
+    margin-top: -4px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #6b6353, #171510);
+    box-shadow: 0 0 0 1px var(--chassis-line);
+    z-index: 2;
+  }
+  .stage-io {
+    font-family: var(--readout);
+    font-size: 0.66rem;
+    letter-spacing: 0.02em;
+    color: var(--copper);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .stage h4 {
+    font-family: var(--legend);
+    font-size: 1.12rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin: 10px 0 8px;
+    color: #ece2ce;
+  }
+  .stage p { margin: 0; font-size: 0.88rem; color: var(--silk); opacity: 0.72; }
+  .stage p code {
+    background: rgba(255,255,255,0.05);
+    border-color: rgba(255,255,255,0.09);
+    color: var(--copper-hi);
+  }
+
+  /* ── The artifact ─────────────────────────────────────────────────────── */
+  .artifact { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 28px; align-items: start; }
+  .artifact-copy p { color: var(--silk); opacity: 0.8; margin: 0 0 18px; }
+  .artifact-copy ul { list-style: none; margin: 0 0 24px; padding: 0; }
+  .artifact-copy li {
+    padding: 11px 0;
+    border-top: 1px solid rgba(216,203,171,0.14);
+    font-size: 0.94rem;
+    color: var(--silk);
+    opacity: 0.86;
+  }
+  .artifact-copy li b { color: #f2e9d6; font-weight: 600; }
+  .artifact-copy code {
+    background: rgba(255,255,255,0.05);
+    border-color: rgba(255,255,255,0.09);
+    color: var(--copper-hi);
+  }
+
+  /* Miniature of the real report, built from the same tokens */
+  .mini { padding: 20px 22px; }
+  .mini-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--panel-line);
+  }
+  .mini-head b {
+    font-family: var(--legend);
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+  .mini-head span { font-family: var(--readout); font-size: 0.68rem; color: var(--ink-soft); }
+  .mini-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 14px;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--panel-line);
+  }
+  .mini-row:last-of-type { border-bottom: none; }
+  .mini-proj {
+    font-family: var(--readout);
+    font-size: 0.72rem;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mini-proj::before {
+    content: "";
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    margin-right: 7px;
+    background: hsl(var(--h) 45% 42%);
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.5);
+  }
+  .mini-hrs {
+    font-family: var(--readout);
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  .meter { grid-column: 1 / -1; display: flex; gap: 2px; }
+  .meter i {
+    flex: 1;
+    height: 11px;
+    border-radius: 1px;
+    background: var(--panel-line);
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.15);
+  }
+  .meter i.on { background: linear-gradient(180deg, var(--led-green-hi), var(--led-green)); }
+  .meter i.on.a { background: linear-gradient(180deg, var(--copper-hi), var(--copper)); }
+  .meter i.on.r { background: linear-gradient(180deg, #cf6d55, var(--led-red)); }
+  .mini-foot {
+    font-family: var(--readout);
+    font-size: 0.66rem;
+    color: var(--ink-soft);
+    text-align: center;
+    padding-top: 14px;
+    margin: 0;
+    border-top: 1px solid var(--panel-line);
+  }
+
+  /* ── Spec sheet ───────────────────────────────────────────────────────── */
+  .scroll-x { overflow-x: auto; }
+  .spec { width: 100%; border-collapse: collapse; }
+  .spec th {
+    font-family: var(--legend);
+    font-size: 0.76rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    text-align: left;
+    padding: 0 10px 12px;
+    border-bottom: 1px solid var(--panel-line);
+  }
+  .spec td {
+    padding: 13px 10px;
+    border-bottom: 1px solid var(--panel-line);
+    color: var(--ink);
+    font-size: 0.93rem;
+  }
+  .spec tr:last-child td { border-bottom: none; }
+  .spec tbody tr:nth-child(even) { background: rgba(43,35,24,0.035); }
+  .spec .v {
+    font-family: var(--readout);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .spec .why { color: var(--ink-soft); font-size: 0.88rem; }
+
+  /* ── Install ──────────────────────────────────────────────────────────── */
+  .install { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+  .install ol { margin: 0; padding-left: 22px; }
+  .install li { margin-bottom: 12px; color: var(--ink-mid); font-size: 0.94rem; }
+  .install li b { color: var(--ink); }
+  .install .caveat { font-size: 0.87rem; color: var(--ink-soft); margin: 18px 0 0; }
+  .tree {
+    font-family: var(--readout);
+    font-size: 0.74rem;
+    line-height: 1.8;
+    color: var(--silk);
+    background: linear-gradient(180deg, var(--chassis-hi), var(--chassis));
+    border: 1px solid var(--chassis-line);
+    border-top: 1px solid rgba(255,255,255,0.06);
+    border-radius: 9px;
+    padding: 22px;
+    margin: 0;
+    overflow-x: auto;
+    /* Without this the tree's long lines set the grid track's min-content
+       width and push the whole page into horizontal scroll. */
+    min-width: 0;
+  }
+  .tree u { color: var(--copper-hi); text-decoration: none; }
+  .tree i { color: var(--silk-dim); font-style: normal; }
+  .tree-note { margin: 14px 0 0; font-size: 0.84rem; color: var(--silk-dim); }
+
+  /* ── Limits, as a ledger ──────────────────────────────────────────────── */
+  .limits { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 40px; }
+  .limits div { padding: 15px 0; border-top: 1px solid var(--panel-line); }
+  .limits h4 {
+    font-family: var(--legend);
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin: 0 0 5px;
+    color: var(--ink);
+  }
+  .limits p { margin: 0; font-size: 0.88rem; color: var(--ink-soft); }
+
+  /* ── Footer ───────────────────────────────────────────────────────────── */
+  footer {
+    margin-top: 78px;
+    padding: 30px 0 52px;
+    border-top: 1px solid rgba(216,203,171,0.13);
+    display: flex;
+    justify-content: space-between;
+    gap: 14px 28px;
+    flex-wrap: wrap;
+    font-family: var(--readout);
+    font-size: 0.72rem;
+    color: var(--silk-dim);
+  }
+  footer a { color: var(--silk-dim); text-decoration: none; border-bottom: 1px solid rgba(216,203,171,0.24); }
+  footer a:hover { color: var(--copper-hi); border-bottom-color: var(--copper); }
+
+  /* ── Responsive ───────────────────────────────────────────────────────── */
+  @media (max-width: 900px) {
+    .hero-top { grid-template-columns: 1fr; gap: 34px; align-items: start; }
+    .odometer { text-align: left; }
+    .modules, .install, .limits, .artifact { grid-template-columns: minmax(0, 1fr); }
+    .limits div:first-child { border-top: 1px solid var(--panel-line); }
+    .chain { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .stage { border-left-width: 1px; border-radius: 0; }
+    .stage:first-child { border-radius: 9px 0 0 0; }
+    .stage:nth-child(2) { border-radius: 0 9px 0 0; }
+    .stage:nth-child(3) { border-radius: 0 0 0 9px; }
+    .stage:last-child { border-radius: 0 0 9px 0; }
+    .stage + .stage::before { display: none; }
+    .nav a:not(.nav-repo) { display: none; }
+  }
+  @media (max-width: 680px) {
+    .arrange-body { --gutter: 96px; }
+    .lane-name { font-size: 0.62rem; }
+    .ruler span:nth-child(even) { display: none; }
+  }
+  @media (max-width: 520px) {
+    .rack { padding: 0 16px; }
+    .hero { padding-top: 44px; }
+    .band { padding-top: 56px; }
+    .panel { padding: 24px 20px; }
+    .chain { grid-template-columns: minmax(0, 1fr); }
+    .stage, .stage:first-child, .stage:nth-child(2), .stage:nth-child(3), .stage:last-child { border-radius: 0; }
+    .stage:first-child { border-radius: 9px 9px 0 0; }
+    .stage:last-child { border-radius: 0 0 9px 9px; }
+  }
+</style>
+</head>
+<body>
+<div class="rack">
+
+  <header class="masthead">
+    <div class="wordmark">
+      <b>TimeTracker</b>
+      <span>for REAPER</span>
+    </div>
+    <nav class="nav">
+      <a href="#modules">What it does</a>
+      <a href="#chain">Signal chain</a>
+      <a href="#report">The report</a>
+      <a href="#spec">Spec</a>
+      <a href="#install">Install</a>
+      <a class="nav-repo" href="https://github.com/abigailwidan/reaper-time-tracker-plugin">GitHub &nearr;</a>
+    </nav>
+  </header>
+
+  <!-- ═══ Hero ═══════════════════════════════════════════════════════════ -->
+  <div class="hero">
+    <div class="hero-top">
+      <div>
+        <p class="legend">ReaScript &middot; for mixers, composers &amp; sound designers</p>
+        <h1>Bill the hours<br>you can <em>show</em>.</h1>
+        <p class="lede">
+          TimeTracker logs real work time per project from inside REAPER, then turns the log
+          into a report you hand over with the invoice. No stopwatch to remember, no estimate
+          to defend.
+        </p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#install">Install it</a>
+          <a class="btn btn-ghost" href="https://github.com/abigailwidan/reaper-time-tracker-plugin">View on GitHub</a>
+        </div>
+      </div>
+      <div class="odometer">
+        <div class="odometer-value"><i>0000</i><span id="odo">18.6</span></div>
+        <div class="odometer-label">Total hours logged</div>
+      </div>
+    </div>
+
+    <!-- The signature: a real arrange view of two real weeks -->
+    <div class="arrange">
+      <div class="arrange-head">
+        <div class="transport">
+          <span class="rec-dot" aria-hidden="true"></span>
+          <span class="legend">Tracking &middot; window focus</span>
+        </div>
+        <p class="legend" style="margin:0;">14 sessions &middot; 4 projects &middot; 04&ndash;17 Aug</p>
+      </div>
+
+      <div class="arrange-body" role="img"
+           aria-label="A REAPER-style arrange view of two weeks of tracked work, 4 through 17 August. Four project lanes — Harborline_EP_Mix_v3 at 13.58 hours across 7 sessions, Client Voiceover at 2.62 hours across 3, Nkosi and Sons Jingle at 2.12 hours across 3, and Podcast_Ep12_Master at 0.33 hours in one — with each session drawn as a clip whose length is its duration.">
+        <div class="ruler" aria-hidden="true">
+          <span style="left:0%">04 Aug</span>
+          <span style="left:14.29%">06</span>
+          <span style="left:28.57%">08 Aug</span>
+          <span style="left:42.86%">10</span>
+          <span style="left:57.14%">12 Aug</span>
+          <span style="left:71.43%">14</span>
+          <span style="left:85.71%">16 Aug</span>
+        </div>
+
+        <div class="lane" style="--h: var(--p1);">
+          <div class="lane-name">Harborline_EP_Mix_v3</div>
+          <div class="lane-track">
+            <span class="clip" data-hrs="1.58 hrs" style="--l:28.57%; --w:3.2%;  --d:0.74s"></span>
+            <span class="clip" data-hrs="2.33 hrs" style="--l:42.86%; --w:4.7%;  --d:1.11s"></span>
+            <span class="clip" data-hrs="1.00 hrs" style="--l:50.00%; --w:2.0%;  --d:1.30s"></span>
+            <span class="clip" data-hrs="2.92 hrs" style="--l:64.29%; --w:5.8%;  --d:1.67s"></span>
+            <span class="clip" data-hrs="1.47 hrs" style="--l:78.57%; --w:2.9%;  --d:2.04s"></span>
+            <span class="clip" data-hrs="3.50 hrs" style="--l:85.71%; --w:7.0%;  --d:2.23s"></span>
+            <span class="clip live" data-hrs="0.78 hrs &middot; live" style="--l:92.86%; --w:1.6%; --d:2.41s"></span>
+          </div>
+        </div>
+
+        <div class="lane" style="--h: var(--p2);">
+          <div class="lane-name">Client Voiceover</div>
+          <div class="lane-track">
+            <span class="clip" data-hrs="0.92 hrs" style="--l:35.71%; --w:1.8%; --d:0.93s"></span>
+            <span class="clip" data-hrs="0.67 hrs" style="--l:57.14%; --w:1.4%; --d:1.49s"></span>
+            <span class="clip" data-hrs="1.03 hrs" style="--l:71.43%; --w:2.1%; --d:1.86s"></span>
+          </div>
+        </div>
+
+        <div class="lane" style="--h: var(--p3);">
+          <div class="lane-name">Nkosi &amp; Sons &ndash; Jingle</div>
+          <div class="lane-track">
+            <span class="clip" data-hrs="0.50 hrs" style="--l:14.29%; --w:1.4%; --d:0.37s"></span>
+            <span class="clip" data-hrs="1.25 hrs" style="--l:21.43%; --w:2.5%; --d:0.56s"></span>
+            <span class="clip" data-hrs="0.37 hrs" style="--l:50.00%; --w:1.4%; --d:1.30s"></span>
+          </div>
+        </div>
+
+        <div class="lane" style="--h: var(--p4);">
+          <div class="lane-name">Podcast_Ep12_Master</div>
+          <div class="lane-track">
+            <span class="clip" data-hrs="0.33 hrs" style="--l:0%; --w:1.4%; --d:0.05s"></span>
+          </div>
+        </div>
+
+        <div class="playhead" aria-hidden="true"></div>
+      </div>
+
+      <div class="arrange-foot">
+        <span>Clip length &prop; session duration &middot; hover a clip for its hours</span>
+        <span>Sampled from docs/sample-report.html</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ Modules ════════════════════════════════════════════════════════ -->
+  <section class="band" id="modules">
+    <div class="band-head">
+      <p class="legend">Two halves of one job</p>
+      <h2>Track quietly.<br>Report clearly.</h2>
+      <p>
+        The background loop is for you: it runs all day and you never touch it. The report is
+        for the person paying the invoice, and it is scoped so one client never sees another
+        client's work.
+      </p>
+    </div>
+
+    <div class="modules">
+      <article class="panel module is-track">
+        <span class="module-tag is-track">&#9679; Tracking</span>
+        <h3>Background loop</h3>
+        <p class="who">Runs on your machine &middot; start it once</p>
+        <p>
+          A <code>defer()</code> loop polls once per second to answer one question: is this
+          REAPER window focused? If it is, the clock on the current project runs. It never
+          touches audio.
+        </p>
+        <ul>
+          <li><b>Focus, not idle.</b> Listening back to a take is work. An idle timer would call it inactivity and under-bill you.</li>
+          <li><b>Per project, not a global total.</b> Switching tabs closes one clock and opens another.</li>
+          <li><b>Identity survives renames.</b> Projects are keyed by a GUID in the project's own ExtState, never by file path.</li>
+          <li><b>Save As is caught.</b> A duplicated project is issued a fresh GUID, so clones never inherit hours they didn't earn.</li>
+          <li><b>Crash-safe by construction.</b> Atomic writes every 45 s, and sessions left dangling by a crash are reconciled at next startup.</li>
+          <li><b>Noise is discarded.</b> Focus blips under 5 s are dropped; gaps under 15 s merge into one session.</li>
+        </ul>
+      </article>
+
+      <article class="panel module is-report">
+        <span class="module-tag is-report">&#9679; Reporting</span>
+        <h3>Report &amp; handoff</h3>
+        <p class="who">What the client receives &middot; run on demand</p>
+        <p>
+          One action reads the log, writes a standalone HTML report, reveals it in your file
+          manager, and offers to open a pre-addressed email draft to send it with.
+        </p>
+        <ul>
+          <li><b>Scoped per send.</b> With more than one project on file, it asks: everything, or just this one?</li>
+          <li><b>Self-contained.</b> A single HTML file with no external assets. It opens in any browser, on any machine, years from now.</li>
+          <li><b>Print-ready.</b> A dedicated print stylesheet swaps the panel to white, so the client saves it straight to PDF.</li>
+          <li><b>Client-ready draft.</b> Addressed by name, period covered, hours in both decimal and h/m, signed off. Client and sender names persist between runs.</li>
+          <li><b>No account, no SMTP, no credentials.</b> It opens a <code>mailto:</code> draft in your own mail client and you press send.</li>
+          <li><b>Runs without the extension.</b> Report generation has no <code>js_ReaScriptAPI</code> dependency, so it works on a machine that never tracked anything.</li>
+        </ul>
+      </article>
+    </div>
+  </section>
+
+  <!-- ═══ Signal chain ═══════════════════════════════════════════════════ -->
+  <section class="band" id="chain">
+    <div class="band-head">
+      <p class="legend">Signal chain</p>
+      <h2>Window focus in,<br>invoice attachment out</h2>
+      <p>Four stages, each one reading the previous stage's output. Nothing in the chain reaches the audio thread.</p>
+    </div>
+    <div class="chain">
+      <div class="stage">
+        <p class="stage-io">in: OS &rarr; out: bool</p>
+        <h4>Poll</h4>
+        <p><code>JS_Window_GetForeground</code> is compared against this instance's main window, once per second.</p>
+      </div>
+      <div class="stage">
+        <p class="stage-io">in: bool &rarr; out: seconds</p>
+        <h4>Accumulate</h4>
+        <p>Elapsed time is credited to the active project's GUID. A tab switch closes one session and opens the next.</p>
+      </div>
+      <div class="stage">
+        <p class="stage-io">in: seconds &rarr; out: JSON</p>
+        <h4>Persist</h4>
+        <p>Every 45 s the log is written to a temp file and renamed, so a crash mid-write cannot corrupt it.</p>
+      </div>
+      <div class="stage">
+        <p class="stage-io">in: JSON &rarr; out: HTML</p>
+        <h4>Deliver</h4>
+        <p>The report action renders the HTML, zips it for attachment, and opens a pre-written draft in your mail client.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ The artifact ═══════════════════════════════════════════════════ -->
+  <section class="band" id="report">
+    <div class="band-head">
+      <p class="legend">The artifact</p>
+      <h2>What the client opens</h2>
+      <p>
+        One HTML file: totals per project with a 24-segment meter, then every session in
+        chronological order with its start, end and duration. The numbers below are a real
+        generated report.
+      </p>
+    </div>
+    <div class="artifact">
+      <div class="artifact-copy">
+        <ul>
+          <li><b>Project totals.</b> Hours per project, each with its share of the busiest project as an LED meter.</li>
+          <li><b>Full session log.</b> Newest first, with the in-progress session marked <b>live</b> so nothing looks retroactively invented.</li>
+          <li><b>GUID on the record.</b> Each project prints its identifier, so two similarly named projects can never be confused.</li>
+          <li><b>Nothing to install.</b> No fonts, no scripts, no tracking pixels &mdash; the file is the whole report.</li>
+        </ul>
+        <a class="btn btn-ghost" href="sample-report.html">Open the sample report</a>
+      </div>
+
+      <div class="panel mini" aria-hidden="true">
+        <div class="mini-head">
+          <b>TimeTracker</b>
+          <span>18.6 hrs &middot; 4 projects</span>
+        </div>
+        <div class="mini-row" style="--h: var(--p1);">
+          <span class="mini-proj">Harborline_EP_Mix_v3.RPP</span>
+          <span class="mini-hrs">13.58 hrs</span>
+          <span class="meter"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on a"></i><i class="on a"></i><i class="on a"></i><i class="on a"></i><i class="on a"></i><i class="on a"></i><i class="on r"></i><i class="on r"></i><i class="on r"></i><i class="on r"></i></span>
+        </div>
+        <div class="mini-row" style="--h: var(--p2);">
+          <span class="mini-proj">Client Voiceover Session.RPP</span>
+          <span class="mini-hrs">2.62 hrs</span>
+          <span class="meter"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+        </div>
+        <div class="mini-row" style="--h: var(--p3);">
+          <span class="mini-proj">Nkosi &amp; Sons - Jingle.RPP</span>
+          <span class="mini-hrs">2.12 hrs</span>
+          <span class="meter"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+        </div>
+        <div class="mini-row" style="--h: var(--p4);">
+          <span class="mini-proj">Podcast_Ep12_Master.RPP</span>
+          <span class="mini-hrs">0.33 hrs</span>
+          <span class="meter"><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+        </div>
+        <p class="mini-foot">Time recorded via active-window focus tracking inside REAPER.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Spec ═══════════════════════════════════════════════════════════ -->
+  <section class="band" id="spec">
+    <div class="band-head">
+      <p class="legend">Specification</p>
+      <h2>The numbers behind the meter</h2>
+    </div>
+    <div class="panel">
+      <h3 class="panel-title">Operating parameters<small>as shipped</small></h3>
+      <div class="scroll-x">
+        <table class="spec">
+          <thead>
+            <tr>
+              <th style="width:32%;">Parameter</th>
+              <th style="width:18%;">Value</th>
+              <th>Why</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Focus poll interval</td><td class="v">1.0 s</td><td class="why">Fine enough to be accurate, coarse enough to be free.</td></tr>
+            <tr><td>Minimum session</td><td class="v">5 s</td><td class="why">Discards accidental focus blips when alt-tabbing past REAPER.</td></tr>
+            <tr><td>Session merge gap</td><td class="v">15 s</td><td class="why">Checking a message mid-mix shouldn't split one session into three.</td></tr>
+            <tr><td>Autosave interval</td><td class="v">45 s</td><td class="why">Bounds worst-case data loss to under a minute.</td></tr>
+            <tr><td>Write strategy</td><td class="v">atomic</td><td class="why">Temp file then rename, so a crash mid-write leaves the previous log intact.</td></tr>
+            <tr><td>Project identity</td><td class="v">GUID</td><td class="why">Held in project ExtState, so renaming or moving the file changes nothing.</td></tr>
+            <tr><td>Data schema</td><td class="v">version 1</td><td class="why">Version-checked on load; an unrecognised file is refused rather than misread.</td></tr>
+            <tr><td>Report meter</td><td class="v">24 seg</td><td class="why">Green through amber to red, scaled against the busiest project.</td></tr>
+            <tr><td>Email body cap</td><td class="v">1800 ch</td><td class="why">Several mail clients silently truncate long <code>mailto:</code> URIs.</td></tr>
+            <tr><td>Audio impact</td><td class="v">none</td><td class="why">Runs on <code>defer()</code>, entirely outside the audio thread.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Install ════════════════════════════════════════════════════════ -->
+  <section class="band" id="install">
+    <div class="band-head">
+      <p class="legend">Installation</p>
+      <h2>Five steps, no build</h2>
+      <p>
+        Pure ReaScript with vendored dependencies. Nothing to compile and nothing to sign.
+        Needs REAPER 6.82+ and the <code>js_ReaScriptAPI</code> extension for OS window-focus access.
+      </p>
+    </div>
+    <div class="install">
+      <div class="panel">
+        <h3 class="panel-title">Setup</h3>
+        <ol>
+          <li>Get the repo: <code>git clone</code> it, or use <b>Code &rarr; Download ZIP</b> on <a href="https://github.com/abigailwidan/reaper-time-tracker-plugin" style="color:var(--copper); text-decoration:underline;">GitHub</a> and unzip.</li>
+          <li>In REAPER: <b>Options &rarr; Show REAPER resource path in finder</b>.</li>
+          <li>Copy the whole <code>reaper-time-tracker-plugin/</code> folder into the <code>Scripts</code> folder shown there.</li>
+          <li><b>Actions &rarr; Show action list &rarr; New action &#9662; &rarr; Load ReaScript…</b>, then load all three files from <code>src/</code>.</li>
+          <li>Install <code>js_ReaScriptAPI</code> via ReaPack (<b>Extensions &rarr; ReaPack &rarr; Browse packages</b>) if you don't have it, then restart REAPER.</li>
+        </ol>
+        <p class="caveat">
+          Run <code>TimeTracker_Background.lua</code> as a startup action rather than a hotkey.
+          <code>lib/</code> must stay a sibling of <code>src/</code> &mdash; the scripts resolve modules
+          through a relative <code>../lib/?.lua</code> path. The folder names aren't load-bearing;
+          that relationship is.
+        </p>
+      </div>
+      <div>
+        <p class="legend" style="margin:0 0 12px;">File structure</p>
+<pre class="tree">reaper-time-tracker-plugin/
+├── <u>src/</u>
+│   ├── TimeTracker_Background.lua       <i># defer() loop</i>
+│   ├── TimeTracker_GenerateReport.lua   <i># JSON → HTML</i>
+│   └── TimeTracker_EmailReport.lua      <i># re-send a report</i>
+├── <u>lib/</u>
+│   ├── tt_data.lua                      <i># load, validate, scope</i>
+│   ├── tt_deps.lua                      <i># extension check</i>
+│   ├── tt_email.lua                     <i># mailto: composition</i>
+│   ├── tt_json.lua                      <i># vendored JSON</i>
+│   ├── tt_paths.lua                     <i># data locations</i>
+│   ├── tt_project_id.lua                <i># GUID / Save As</i>
+│   └── tt_shell.lua                     <i># open + zip helpers</i>
+├── <u>tests/</u>                             <i># 2 automated, 4 in-REAPER</i>
+├── <u>docs/</u>
+│   ├── PLAN.md                          <i># schema, edge cases</i>
+│   ├── SCOPE_DESIGN.md                  <i># design rationale</i>
+│   └── sample-report.html               <i># example output</i>
+└── LICENSE                              <i># GPLv3</i></pre>
+        <p class="tree-note">
+          Tracking data and the generated report live under REAPER's own resource path, at
+          <code style="background:rgba(255,255,255,0.05); border-color:rgba(255,255,255,0.09); color:var(--copper-hi);">Data/TimeTracker/</code>.
+          Neither is shipped with the project.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Limits ═════════════════════════════════════════════════════════ -->
+  <section class="band" id="limits">
+    <div class="band-head">
+      <p class="legend">Scope boundaries</p>
+      <h2>What it deliberately doesn't do</h2>
+      <p>A tool that sells verifiability doesn't get to be vague about its own edges.</p>
+    </div>
+    <div class="panel">
+      <div class="limits">
+        <div>
+          <h4>Single machine</h4>
+          <p>Data is local with no cross-device sync. Two workstations produce two logs.</p>
+        </div>
+        <div>
+          <h4>Focus can over-count</h4>
+          <p>Leaving REAPER focused while you're away from the desk accrues time. The session log exists partly so a client can sanity-check an implausible stretch.</p>
+        </div>
+        <div>
+          <h4>Unsaved projects can orphan</h4>
+          <p>An untitled project gets a temporary GUID. Save before closing and its time migrates to a permanent one; don't, and it's stranded in the JSON.</p>
+        </div>
+        <div>
+          <h4>Attachments are manual</h4>
+          <p><code>mailto:</code> can't carry files, so the zipped report is revealed for you to drag in. The alternative was storing your mail password in plaintext.</p>
+        </div>
+        <div>
+          <h4>Zipped, not raw HTML</h4>
+          <p>Mail clients inline-preview or quarantine bare <code>.html</code> attachments, so the report ships as <code>time_report.zip</code>.</p>
+        </div>
+        <div>
+          <h4>Commas are stripped from names</h4>
+          <p>REAPER returns dialog fields comma-separated, so a comma in a client name would split the field. It becomes a space rather than mangling the name.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p style="margin:0;">
+      TimeTracker &middot; Stellenbosch University Music Technology, Project 5 &middot; 2026 &middot;
+      <a href="https://github.com/abigailwidan/reaper-time-tracker-plugin/blob/main/LICENSE">GPLv3</a>
+    </p>
+    <p style="margin:0;">
+      <a href="https://github.com/abigailwidan/reaper-time-tracker-plugin">Repository</a> &middot;
+      Requires REAPER 6.82+ and <a href="https://forum.cockos.com/showthread.php?t=212174">js_ReaScriptAPI</a>
+    </p>
+  </footer>
+
+</div>
+
+<script>
+  /* The odometer rises with the playhead, then holds at the report's real total. */
+  (function () {
+    var el = document.getElementById('odo');
+    if (!el) return;
+    var target = 18.6;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      el.textContent = target.toFixed(1);
+      return;
+    }
+    var duration = 2900, start = null;
+    el.textContent = '00.0';
+    function frame(now) {
+      if (start === null) start = now;
+      var t = Math.min((now - start) / duration, 1);
+      var value = target * (1 - Math.pow(1 - t, 2));
+      el.textContent = (value < 10 ? '0' : '') + value.toFixed(1);
+      if (t < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  })();
+</script>
+</body>
+</html>
