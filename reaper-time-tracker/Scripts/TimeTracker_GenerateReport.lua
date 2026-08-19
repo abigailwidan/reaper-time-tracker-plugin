@@ -1,9 +1,29 @@
--- TimeTracker_GenerateReport.lua
+-- Scripts/TimeTracker_GenerateReport.lua
 --
--- Milestone 7: Report v2
--- Reads time_data.json, validates version/corruption rules, and generates
--- a comprehensive HTML report complete with project totals and a full
--- chronological session log.
+-- Purpose: Generate an interactive HTML report from collected tracking data.
+--
+-- This script reads the time_data.json file produced by TimeTracker_Background and
+-- renders it as a standalone HTML report. The report includes:
+--   - Project summary table (with relative time-share bar chart)
+--   - Chronological session log (start time, end time, duration per session)
+--   - Automatic directory reveal on completion
+--
+-- Installation: Install as a regular REAPER script / action (trigger manually or hotkey).
+--
+-- Workflow:
+--   1. Validates data file exists and is readable
+--   2. Parses JSON and checks schema version
+--   3. Generates HTML with embedded CSS and data tables
+--   4. Writes to time_report.html in the same data directory
+--   5. Opens the containing folder in Finder/Explorer
+--   6. Confirms success to the user via message box
+--
+-- Error Handling:
+--   - Missing data file: Prompts user to track some time first
+--   - Corrupted JSON: Renames file to time_data.corrupted-<timestamp>.json for manual inspection
+--   - Version mismatch: Alerts user to update the script or restore a backup
+--
+-- Dependencies: tt_paths, tt_json (lib modules), REAPER API
 
 local script_path = debug.getinfo(1, "S").source:match("^@?(.*[\\/])")
 package.path = script_path .. "../lib/?.lua;" .. package.path
@@ -11,12 +31,18 @@ package.path = script_path .. "../lib/?.lua;" .. package.path
 local tt_paths = require("tt_paths")
 local tt_json = require("tt_json")
 
-local EXPECTED_VERSION = 1
+local EXPECTED_VERSION = 1  -- Incremented if time_data.json schema changes
 
+-- Converts seconds to human-readable hours (e.g., 3600 → "1.00 hrs").
 local function format_hours(seconds)
   return string.format("%.2f hrs", seconds / 3600)
 end
 
+-- Generates a complete HTML document from tracking_data.
+-- Builds two tables:
+--   1. Project Summary: Project name, relative bar chart, and total time
+--   2. Session Log: Chronological list of all sessions with start/end/duration
+-- Returns a self-contained HTML string (no external stylesheets or scripts).
 local function generate_html(data)
   local project_rows = ""
   local session_rows = ""
@@ -119,6 +145,14 @@ local function generate_html(data)
   ]]
 end
 
+-- Entry point: Orchestrates the full report generation pipeline.
+-- Steps:
+--   1. Open and read time_data.json
+--   2. Parse JSON and validate schema
+--   3. Generate HTML from data
+--   4. Write HTML to time_report.html
+--   5. Open folder and confirm via message box
+-- Each step includes user-facing error messages for failure cases.
 local function main()
   local data_file = tt_paths.get_data_file()
   local f = io.open(data_file, "r")
