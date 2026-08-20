@@ -64,8 +64,10 @@ Depends on the community `js_ReaScriptAPI` extension for window-focus queries. I
 
 ## Demo & Sample Output
 
+- **[reaper.bushes.tech](https://reaper.bushes.tech/)** — project website.
 - **`docs/sample-report.html`** — a generated report, opened in any browser.
-- **`docs/TimeTracker Advert (Final).m4v`** — a promo video of the tool in use. It's kept locally in this folder but is **not tracked in git** (`.gitignore`) since it's well over GitHub's per-file size limit; ask whoever has it if you need a copy.
+- **`docs/TimeTracker.pptx`** — presentation slides. Kept locally in this folder but **not tracked in git** (`.gitignore`) — the embedded video pushes it well over GitHub's per-file size limit. Present in the local repo and in the zipped hand-in copy, just not on GitHub.
+- **`docs/TimeTracker Advert (Final).m4v`** — a promo video of the tool in use. Same situation: kept locally and in the hand-in zip, **not tracked in git** (`.gitignore`) since it's well over GitHub's per-file size limit.
 
 ## Installation
 
@@ -139,7 +141,8 @@ reaper-time-tracker-plugin/
 │   ├── PLAN.md                             # implementation plan, schema, edge cases
 │   ├── sample-report.html                  # example of generated report output
 │   ├── SCOPE_DESIGN.md                     # scope, architecture, design rationale
-│   └── TimeTracker Advert (Final).m4v      # promo video (local only, gitignored)
+│   ├── TimeTracker.pptx                    # presentation slides (local + hand-in zip only, gitignored)
+│   └── TimeTracker Advert (Final).m4v      # promo video (local + hand-in zip only, gitignored)
 ├── lib/
 │   ├── tt_data.lua                         # read-only load, validation, report scoping
 │   ├── tt_deps.lua                         # js_ReaScriptAPI presence check
