@@ -33,6 +33,27 @@ Freelancers who bill by the hour — mixers, composers, sound designers — rely
 
 A collaborative initiative to provide music professionals and students with transparent billing infrastructure for hourly creative work.
 
+### Meet the Team
+<table>
+  <tr>
+    <td align="center">
+      <img src="https://github.com/abigailwidan.png" width="150"><br>
+      <b>Abigail Widan</b><br>
+      <a href="https://github.com/abigailwidan">@abigailwidan</a>
+    </td>
+    <td align="center">
+      <img src="https://github.com/Ngonidzashe-Zvenyika.png" width="150"><br>
+      <b>Ngonidzashe Zvenyika</b><br>
+      <a href="https://github.com/Ngonidzashe-Zvenyika">@Ngonidzashe-Zvenyika</a>
+    </td>
+    <td align="center">
+      <img src="https://github.com/SkillBeatsAll.png" width="150"><br>
+      <b>Joel Cedras</b><br>
+      <a href="https://github.com/SkillBeatsAll">@SkillBeatsAll</a>
+    </td>
+  </tr>
+</table>
+
 ## Architecture
 
 | Component | What it does |
